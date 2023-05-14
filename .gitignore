@@ -3,3 +3,5 @@ __pycache__/
 .vscode
 *.pth
 lightning_logs/
+logs/
+test*.py

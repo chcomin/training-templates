@@ -24,7 +24,7 @@ def transform(image, mask, transform_comp):
 
     return image, mask.long()
 
-def create_transform(mean, std, crop_size=None, use_simple=True):
+def create_transform(mean, std, crop_size, type='train-simple'):
     """Create a transform function with signature transform(image, label)."""
 
     def generate_multiplicative(mult_val_limit):
@@ -35,20 +35,16 @@ def create_transform(mean, std, crop_size=None, use_simple=True):
             return (img*mult_val).astype(np.uint8)
         return custom
     
-    if crop_size is None:
-        random_crop = aug.NoOp(p=1.)
-    else:
-        random_crop = aug.RandomCrop(crop_size[0], crop_size[1])
         
-    if use_simple:
+    if type=='train-simple':
         transform_comp = aug.Compose([
-            random_crop,
+            aug.RandomCrop(crop_size[0], crop_size[1]),
             aug.Normalize(mean=mean, std=std),
             ToTensorV2()
         ])
-    else:
+    elif type=='train-full':
         transform_comp = aug.Compose([
-            random_crop,
+            aug.RandomCrop(crop_size[0], crop_size[1]),
             aug.OneOf([
                 aug.GaussianBlur(blur_limit=(3, 7)),
                 aug.Sharpen(alpha=(0.2, 0.5), lightness=(0., 1.)),
@@ -68,6 +64,12 @@ def create_transform(mean, std, crop_size=None, use_simple=True):
             aug.Normalize(mean=mean, std=std),
             ToTensorV2(),
         ])
+    elif type=='validation':
+        transform_comp = aug.Compose([
+            aug.CenterCrop(1104, 1376),   # Still need to crop for validation because cannot create batch with samples having different sizes.
+            aug.Normalize(mean=mean, std=std),
+            ToTensorV2()
+        ])        
 
     transform_func = partial(transform, transform_comp=transform_comp)
 
@@ -88,8 +90,13 @@ def create_datasets(img_dir, label_dir, crop_size=None, train_val_split=0.1, use
     std_data = 0.0482
     class_weights = torch.tensor([0.367, 0.633])  # On average, 63.3% of the images is background
 
-    train_transform = create_transform(mean=mean_data, std=std_data, crop_size=crop_size, use_simple=use_simple)
-    valid_transform = create_transform(mean=mean_data, std=std_data, crop_size=None, use_simple=True)
+    if use_simple:
+        train_type = 'train-simple'
+    else:
+        train_type = 'train-full'
+
+    train_transform = create_transform(mean=mean_data, std=std_data, crop_size=crop_size, type=train_type)
+    valid_transform = create_transform(mean=mean_data, std=std_data, crop_size=None, type='validation')
 
     ds = ImageSegmentationDataset(img_dir, label_dir, name_to_label_map, img_opener=img_opener, label_opener=label_opener)
     ds_train, ds_valid = ds.split_train_val(train_val_split, seed=seed)
