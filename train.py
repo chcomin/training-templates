@@ -7,6 +7,38 @@ import torch.nn as nn
 import torchtrainer   #https://github.com/chcomin/torchtrainer
 from dataset import create_datasets
 
+defaul_params = {
+    # Dataset
+    'img_dir': None,
+    'label_dir': None,
+    'crop_size': (256, 256),          
+    'train_val_split': 0.1,
+    'use_transforms': False,
+    # Model
+    'model_layers': (1, 1, 1, 1), 
+    'model_channels': (4, 4, 4, 4), 
+    # Training
+    'epochs': 1,
+    'lr': 0.001,
+    'batch_size': 8,
+    'momentum': 0.9,
+    'weight_decay': 0.,
+    'seed': 12,
+    'loss': 'cross_entropy',
+    'class_weights': (0.367, 0.633),
+    # Efficiency
+    'device': 'cuda',
+    'num_workers': 3,
+    'use_amp': False,
+    'pin_memory': False,
+    'non_blocking': False,
+    # Other
+    'resume': False,
+    'log_dir': 'logs',
+    'version':1,
+    'save_best':True,
+}
+
 def seed_worker(worker_id):
     """Set Python and numpy seeds for dataloader workers. Each worker receives a different seed in initial_seed()."""
     worker_seed = torch.initial_seed() % 2**32
@@ -147,7 +179,11 @@ def train(model, ds_train, ds_valid, loss, class_weights, epochs, lr, batch_size
 
     return logger
 
-def run(params):
+def run(user_params):
+
+    params = defaul_params.copy()
+    for k, v in user_params.items():
+        params[k] = v
     
     # Set deterministic training if a seed is provided
     seed = params['seed']

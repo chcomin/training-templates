@@ -7,6 +7,38 @@ from lightning.pytorch.loggers import TensorBoardLogger
 import torchtrainer   #https://github.com/chcomin/torchtrainer
 from dataset import create_datasets
 
+defaul_params = {
+    # Dataset
+    'img_dir': None,
+    'label_dir': None,
+    'crop_size': (256, 256),          
+    'train_val_split': 0.1,
+    'use_transforms': False,
+    # Model
+    'model_layers': (1, 1, 1, 1), 
+    'model_channels': (4, 4, 4, 4), 
+    # Training
+    'epochs': 1,
+    'lr': 0.001,
+    'batch_size': 8,
+    'momentum': 0.9,
+    'weight_decay': 0.,
+    'seed': 12,
+    'loss': 'cross_entropy',
+    'class_weights': (0.367, 0.633),
+    # Efficiency
+    'device': 'cuda',
+    'num_workers': 3,
+    'use_amp': False,
+    'pin_memory': False,
+    'non_blocking': False,
+    # Other
+    'resume': False,
+    'log_dir': 'logs',
+    'version':1,
+    'save_best':True,
+}
+
 class LitSeg(pl.LightningModule):
     def __init__(self, model_layers, model_channels, loss, class_weights, lr, momentum, weight_decay, iters):
         super().__init__()
@@ -62,7 +94,11 @@ class LitSeg(pl.LightningModule):
     #def on_train_start(self):
     #    self.logger.log_hyperparams(self.hparams, {"val_loss": 0, "iou": 0})
 
-def run(params):
+def run(user_params):
+
+    params = defaul_params.copy()
+    for k, v in user_params.items():
+        params[k] = v
 
     # Mixed precision
     if params['use_amp']:
