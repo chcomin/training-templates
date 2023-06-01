@@ -25,6 +25,7 @@ defaul_params = {
     'weight_decay': 0.,
     'seed': 12,
     'loss': 'cross_entropy',
+    'scheduler_power': 0.9,
     'class_weights': (0.367, 0.633),
     # Efficiency
     'device': 'cuda',
@@ -40,7 +41,7 @@ defaul_params = {
 }
 
 class LitSeg(pl.LightningModule):
-    def __init__(self, model_layers, model_channels, loss, class_weights, lr, momentum, weight_decay, iters):
+    def __init__(self, model_layers, model_channels, loss, class_weights, lr, momentum, weight_decay, iters, scheduler_power):
         super().__init__()
         self.save_hyperparameters()
 
@@ -58,6 +59,7 @@ class LitSeg(pl.LightningModule):
         self.momentum = momentum
         self.weight_decay = weight_decay
         self.iters = iters
+        self.scheduler_power = scheduler_power
         self.model = model
 
     def forward(self, x):
@@ -75,30 +77,38 @@ class LitSeg(pl.LightningModule):
         x, y = batch
         output = self.model(x)
         loss = self.loss_func(output, y)
-        acc = torchtrainer.perf_funcs.segmentation_accuracy(output, y)
+        acc = torchtrainer.perf_funcs.segmentation_accuracy(output, y, ('iou', 'prec', 'rec'))
+
+        if torch.isnan(loss):
+            checkpoint = {
+                "model": self.model,
+                'batch': batch,
+                "batch_idx": batch_idx,
+            }
+            torch.save(checkpoint, 'error_ckp.pth')
 
         self.log("val_loss", loss, prog_bar=True)       
-        self.log_dict(acc)   
+        self.log_dict(acc, prog_bar=True)   
         self.log("hp_metric", loss)   # Metric to show with hyperparameters in Tensorboard
 
     def configure_optimizers(self):
-        optimizer = optim.SGD(self.parameters(), lr=self.learnin_rate, momentum=self.momentum, weight_decay=self.weight_decay)
-        lr_scheduler = torch.optim.lr_scheduler.PolynomialLR(optimizer, total_iters=self.iters, power=0.9)
+        #optimizer = optim.SGD(self.parameters(), lr=self.learnin_rate, momentum=self.momentum, weight_decay=self.weight_decay)
+        optimizer = optim.AdamW(self.parameters(), lr=self.learnin_rate, betas=(self.momentum, 0.999), weight_decay=self.weight_decay)
+        lr_scheduler = torch.optim.lr_scheduler.PolynomialLR(optimizer, total_iters=self.iters, power=self.scheduler_power)
         lr_scheduler_config = {
             "scheduler": lr_scheduler,
             "interval": "step",
         }
 
         return {'optimizer':optimizer, 'lr_scheduler':lr_scheduler_config}
-    
-    #def on_train_start(self):
-    #    self.logger.log_hyperparams(self.hparams, {"val_loss": 0, "iou": 0})
 
 def run(user_params):
 
     params = defaul_params.copy()
     for k, v in user_params.items():
         params[k] = v
+
+    torch.set_float32_matmul_precision('high')
 
     # Mixed precision
     if params['use_amp']:
@@ -110,11 +120,11 @@ def run(user_params):
         # workers=True sets different seeds for each worker.
         pl.seed_everything(seed, workers=True)
 
-    # Create dataset and datalaoders
+    # Create dataset and dataloaders
     ds_train, ds_valid, _ = create_datasets(params['img_dir'], params['label_dir'], params['crop_size'], params['train_val_split'], use_simple=not params['use_transforms'])
     data_loader_train = torch.utils.data.DataLoader(
         ds_train,
-        batch_size=params['batch_size'],
+        batch_size=params['batch_size_train'],
         shuffle=True,
         num_workers=params['num_workers'],
         pin_memory=params['pin_memory'],
@@ -123,7 +133,7 @@ def run(user_params):
 
     data_loader_valid = torch.utils.data.DataLoader(
         ds_valid,
-        batch_size=1,     # TODO: Include parameter for validation batch size. It is complicated because images are larger during validation
+        batch_size=params['batch_size_valid'],
         shuffle=False,
         num_workers=params['num_workers'],
         pin_memory=params['pin_memory'],
@@ -145,7 +155,8 @@ def run(user_params):
             pl.seed_everything(seed+start_epoch, workers=True)
     else:
         checkpoint_file = None
-        lit_model = LitSeg(params['model_layers'], params['model_channels'], params['loss'], params['class_weights'], params['lr'], params['momentum'], params['weight_decay'], total_iters)
+        lit_model = LitSeg(params['model_layers'], params['model_channels'], params['loss'], params['class_weights'], params['lr'], params['momentum'], params['weight_decay'], 
+                           total_iters, params['scheduler_power'])
         start_epoch = 0
 
     callbacks = [LearningRateMonitor()]
@@ -163,4 +174,3 @@ def run(user_params):
     trainer.fit(lit_model, data_loader_train, data_loader_valid, ckpt_path=checkpoint_file)
 
     return ds_train, ds_valid, lit_model, trainer
-
