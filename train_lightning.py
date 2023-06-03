@@ -20,7 +20,8 @@ defaul_params = {
     # Training
     'epochs': 1,
     'lr': 0.001,
-    'batch_size': 8,
+    'batch_size_train': 8,
+    'batch_size_valid': 8,
     'momentum': 0.9,
     'weight_decay': 0.,
     'seed': 12,
@@ -79,6 +80,7 @@ class LitSeg(pl.LightningModule):
         loss = self.loss_func(output, y)
         acc = torchtrainer.perf_funcs.segmentation_accuracy(output, y, ('iou', 'prec', 'rec'))
 
+        # In case something goes wrong
         if torch.isnan(loss):
             checkpoint = {
                 "model": self.model,
