@@ -24,22 +24,26 @@ def transform(image, mask, transform_comp):
 
     return image, mask.long()
 
+def generate_multiplicative(mult_val_limit):
+    """Generate custom function for Albumentations. The augmentation multiply
+    the image by a constant value drawn uniformly in the range defined by `mult_val_limit`."""
+    def custom(img, **kwargs):
+        mult_val = np.random.rand()*(mult_val_limit[1]-mult_val_limit[0]) + mult_val_limit[0]
+        return (img*mult_val).astype(np.uint8)
+    return custom
+
+def zscore(img, **kwargs):
+    return ((img-img.mean())/img.std()).astype(np.float32)
+
 def create_transform(mean, std, crop_size, type='train-simple'):
     """Create a transform function with signature transform(image, label)."""
 
-    def generate_multiplicative(mult_val_limit):
-        """Generate custom function for Albumentations. The augmentation multiply
-        the image by a constant value drawn uniformly in the range defined by `mult_val_limit`."""
-        def custom(img, **kwargs):
-            mult_val = np.random.rand()*(mult_val_limit[1]-mult_val_limit[0]) + mult_val_limit[0]
-            return (img*mult_val).astype(np.uint8)
-        return custom
-    
-        
     if type=='train-simple':
         transform_comp = aug.Compose([
             aug.RandomCrop(crop_size[0], crop_size[1]),
-            aug.Normalize(mean=mean, std=std),
+            aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
+            #aug.Normalize(mean=mean, std=std),
+            aug.Lambda(name='zscore', image=zscore, p=1.),
             ToTensorV2()
         ])
     elif type=='train-full':
@@ -60,14 +64,17 @@ def create_transform(mean, std, crop_size, type='train-simple'):
             aug.RandomRotate90(),
             aug.Transpose(),
             aug.ShiftScaleRotate(shift_limit_x=0.1, shift_limit_y=0.1, scale_limit=0.25, rotate_limit=45),
-            aug.CLAHE(clip_limit=(1., 2.), tile_grid_size=(16, 16), p=0.1),
+            aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
+            #aug.CLAHE(clip_limit=(1., 2.), tile_grid_size=(16, 16), p=0.1),
             aug.Normalize(mean=mean, std=std),
             ToTensorV2(),
         ])
     elif type=='validation':
         transform_comp = aug.Compose([
-            aug.CenterCrop(1104, 1376),   # Still need to crop for validation because cannot create batch with samples having different sizes.
-            aug.Normalize(mean=mean, std=std),
+            aug.CenterCrop(1104, 1376),   # Still need to crop for validation because some samples have different sizes, which complicates batch creation
+            aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
+            #aug.Normalize(mean=mean, std=std),
+            aug.Lambda(name='zscore', image=zscore, p=1.),
             ToTensorV2()
         ])        
 
@@ -86,8 +93,8 @@ def create_datasets(img_dir, label_dir, crop_size=None, train_val_split=0.1, use
     seed: seed for splitting the data
     """
 
-    mean_data = 0.1373
-    std_data = 0.0482
+    mean_data = 0.5 #0.2038 (with CLAHE clip_limit=3, tile_grid_size=16) #0.1373 (whole dataset, no transform)
+    std_data = 1 #0.1115 (with CLAHE clip_limit=3, tile_grid_size=16) #0.0482 (whole dataset, no transform)
     class_weights = torch.tensor([0.367, 0.633])  # On average, 63.3% of the images is background
 
     if use_simple:
