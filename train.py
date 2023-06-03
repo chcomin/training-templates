@@ -20,7 +20,8 @@ defaul_params = {
     # Training
     'epochs': 1,
     'lr': 0.001,
-    'batch_size': 8,
+    'batch_size_train': 8,
+    'batch_size_valid': 8,
     'momentum': 0.9,
     'weight_decay': 0.,
     'seed': 12,
@@ -98,14 +99,14 @@ def validate(model, data_loader_valid, loss_func, device, ds_size):
 
     return valid_stats
         
-def train(model, ds_train, ds_valid, loss, class_weights, epochs, lr, batch_size, momentum=0.9, weight_decay=0., device='cuda', num_workers=0, 
+def train(model, ds_train, ds_valid, loss, class_weights, epochs, lr, batch_size_train, batch_size_valid, momentum=0.9, weight_decay=0., device='cuda', num_workers=0, 
           use_amp=False, pin_memory=False, non_blocking=False, resume=False, experiment_folder='logs', save_best=True, seed=None, meta=None):
 
     start_epoch = 1
     # Create dataloaders
     data_loader_train = torch.utils.data.DataLoader(
         ds_train,
-        batch_size=batch_size,
+        batch_size=batch_size_train,
         shuffle=True,
         num_workers=num_workers,
         pin_memory=pin_memory,
@@ -114,7 +115,7 @@ def train(model, ds_train, ds_valid, loss, class_weights, epochs, lr, batch_size
     )
     data_loader_valid = torch.utils.data.DataLoader(
         ds_valid,
-        batch_size=1,
+        batch_size=batch_size_valid,
         shuffle=False,
         num_workers=num_workers,
         pin_memory=pin_memory,
@@ -148,7 +149,7 @@ def train(model, ds_train, ds_valid, loss, class_weights, epochs, lr, batch_size
             # Seed using the current epoch to avoid using the same seed as in epoch 0 when resuming
             seed_everything(seed+start_epoch)
 
-    batches_per_epoch = len(ds_train)//batch_size + 1*(len(ds_train)%batch_size>0)
+    batches_per_epoch = len(ds_train)//batch_size_train + 1*(len(ds_train)%batch_size_train>0)
     best_valid_loss = torch.inf
     for epoch in range(start_epoch, start_epoch+epochs):
         print(f'Epoch {epoch}/{start_epoch+epochs-1}')
@@ -196,7 +197,8 @@ def run(user_params):
     experiment_folder = Path(params['log_dir'])/f'version_{params["version"]}'
     experiment_folder.mkdir(parents=True, exist_ok=True)
 
-    logger = train(model, ds_train, ds_valid, params['loss'], params['class_weights'], params['epochs'], params['lr'], params['batch_size'], momentum=params['momentum'], 
+    logger = train(model, ds_train, ds_valid, params['loss'], params['class_weights'], params['epochs'], params['lr'], params['batch_size_train'], params['batch_size_valid'], 
+                   momentum=params['momentum'], 
                    weight_decay=params['weight_decay'], device=params['device'], num_workers=params['num_workers'], use_amp=params['use_amp'], 
                    pin_memory=params['pin_memory'], non_blocking=params['non_blocking'], resume=params['resume'], experiment_folder=experiment_folder, 
                    save_best=params['save_best'], seed=seed, meta=params)
