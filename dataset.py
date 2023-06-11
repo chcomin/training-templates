@@ -24,13 +24,11 @@ def transform(image, mask, transform_comp):
 
     return image, mask.long()
 
-def generate_multiplicative(mult_val_limit):
+def multiplicative(img, mult_val_limit, **kwargs):
     """Generate custom function for Albumentations. The augmentation multiply
     the image by a constant value drawn uniformly in the range defined by `mult_val_limit`."""
-    def custom(img, **kwargs):
-        mult_val = np.random.rand()*(mult_val_limit[1]-mult_val_limit[0]) + mult_val_limit[0]
-        return (img*mult_val).astype(np.uint8)
-    return custom
+    mult_val = np.random.rand()*(mult_val_limit[1]-mult_val_limit[0]) + mult_val_limit[0]
+    return (img*mult_val).astype(np.uint8)
 
 def zscore(img, **kwargs):
     return ((img-img.mean())/img.std()).astype(np.float32)
@@ -57,7 +55,7 @@ def create_transform(mean, std, crop_size, type='train-simple'):
             aug.OneOf([
                 aug.RandomGamma(gamma_limit=(90, 150)),
                 aug.RandomBrightnessContrast(brightness_limit=(-0.1, 0.3), contrast_limit=(-0.2, 0.5)),
-                aug.Lambda(name='multiply', image=generate_multiplicative((0.7, 1.)), p=0.1)
+                aug.Lambda(name='multiply', image=partial(multiplicative, mult_val_limit=(0.7, 1.)), p=0.1)
             ], p=1.),
             aug.GaussNoise(var_limit=(50, 250), p=1.),  # slow, 0.051s/img
             aug.Flip() ,
@@ -66,7 +64,8 @@ def create_transform(mean, std, crop_size, type='train-simple'):
             aug.ShiftScaleRotate(shift_limit_x=0.1, shift_limit_y=0.1, scale_limit=0.25, rotate_limit=45),
             aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
             #aug.CLAHE(clip_limit=(1., 2.), tile_grid_size=(16, 16), p=0.1),
-            aug.Normalize(mean=mean, std=std),
+            #aug.Normalize(mean=mean, std=std),
+            aug.Lambda(name='zscore', image=zscore, p=1.),
             ToTensorV2(),
         ])
     elif type=='validation':
