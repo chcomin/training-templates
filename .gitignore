@@ -4,6 +4,7 @@ __pycache__/
 *.pth
 lightning_logs/
 logs/
+logs2/
 test*.py
 notes.txt
 models/

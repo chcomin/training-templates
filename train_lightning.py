@@ -3,46 +3,50 @@ import torch
 from torch import optim, nn
 import lightning.pytorch as pl
 from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
-from lightning.pytorch.loggers import TensorBoardLogger
+from lightning.pytorch.loggers import TensorBoardLogger, Logger
+from lightning.pytorch.utilities import rank_zero_only
 import torchtrainer   #https://github.com/chcomin/torchtrainer
 from dataset import create_datasets
 
 defaul_params = {
     # Dataset
-    'img_dir': None,
-    'label_dir': None,
-    'crop_size': (256, 256),          
-    'train_val_split': 0.1,
-    'use_transforms': False,
+    'img_dir': None,                    # Images path
+    'label_dir': None,                  # Labels path
+    'crop_size': (256, 256),            # Crop size for training
+    'train_val_split': 0.1,             # Train/validation split
+    'use_transforms': False,            # Use data augmentation
     # Model
-    'model_layers': (1, 1, 1, 1), 
-    'model_channels': (4, 4, 4, 4), 
+    'model_layers': (3, 3, 3),          # Number of residual blocks at each layer of the model
+    'model_channels': (16,32,64),       # Number of channels at each layer
+    'use_unet': True,                   # If False, use ResNet with no downsampling
     # Training
     'epochs': 1,
-    'lr': 0.001,
+    'lr': 0.01,
     'batch_size_train': 8,
-    'batch_size_valid': 8,
-    'momentum': 0.9,
+    'batch_size_valid': 8, 
+    'momentum': 0.9,                    # Momentum for optimizer
     'weight_decay': 0.,
-    'seed': 12,
+    'seed': 12,                         # Seed for random number generators
     'loss': 'cross_entropy',
-    'scheduler_power': 0.9,
-    'class_weights': (0.367, 0.633),
+    'scheduler_power': 0.9,             # Power por the polynomial scheduler
+    'class_weights': (0.367, 0.633),    # Weights to use for cross entropy
     # Efficiency
     'device': 'cuda',
-    'num_workers': 3,
-    'use_amp': False,
-    'pin_memory': False,
+    'num_workers': 3,                   # Number of workers for the dataloader
+    'use_amp': True,                    # Mixed precision
+    'pin_memory': False,            
     'non_blocking': False,
+    # Logging
+    'log_dir': 'logs_unet',             # Directory for logging metrics and model checkpoints
+    'experiment':'unet_l_3_c_16_32_64', # Experiment tag
+    'save_best':True,                   # Save model with best validation loss
     # Other
-    'resume': False,
-    'log_dir': 'logs',
-    'version':1,
-    'save_best':True,
+    'resume': False,                    # Resume from previous training
 }
 
 class LitSeg(pl.LightningModule):
-    def __init__(self, model_layers, model_channels, loss, class_weights, lr, momentum, weight_decay, iters, scheduler_power):
+    def __init__(self, model_layers, model_channels, loss, class_weights, lr, momentum, weight_decay, iters, scheduler_power, 
+                 use_unet, meta):
         super().__init__()
         self.save_hyperparameters()
 
@@ -53,7 +57,10 @@ class LitSeg(pl.LightningModule):
             loss_func = torchtrainer.perf_funcs.LabelWeightedCrossEntropyLoss()
 
         # Model
-        model = torchtrainer.models.resnet_seg.ResNetSeg(model_layers, model_channels)
+        if use_unet:
+            model = torchtrainer.models.resunet.ResUNet(model_layers, model_channels)
+        else:
+            model = torchtrainer.models.resnet_seg.ResNetSeg(model_layers, model_channels)
 
         self.loss_func = loss_func
         self.learnin_rate = lr
@@ -104,8 +111,35 @@ class LitSeg(pl.LightningModule):
 
         return {'optimizer':optimizer, 'lr_scheduler':lr_scheduler_config}
 
+class MyLogger(Logger):
+    def __init__(self):
+        self.metrics = {}
+
+    @property
+    def name(self):
+        return "MyLogger"
+
+    @property
+    def version(self):
+        # Return the experiment version, int or str.
+        return 1
+
+    @rank_zero_only
+    def log_hyperparams(self, params):
+        self.params = params
+
+    @rank_zero_only
+    def log_metrics(self, metrics, step):
+        saved_metrics = self.metrics
+        for k, v, in metrics.items():
+            if k in saved_metrics:
+                saved_metrics[k].append((step,v))
+            else:
+                saved_metrics[k] = [(step,v)]
+
 def run(user_params):
 
+    #Use default value of a parameter in case it was not provided as input to the function
     params = defaul_params.copy()
     for k, v in user_params.items():
         params[k] = v
@@ -141,10 +175,10 @@ def run(user_params):
         pin_memory=params['pin_memory'],
         persistent_workers=params['num_workers']>0   # Avoid recreating workers at each epoch
     )
-    total_iters = len(data_loader_train)*params['epochs']
+    total_iters = len(data_loader_train)*params['epochs']   # For scheduler
 
     # Folder for saving logs
-    experiment_folder = Path(params['log_dir'])/f'version_{params["version"]}'
+    experiment_folder = Path(params['log_dir'])/str(params["experiment"])
     experiment_folder.mkdir(parents=True, exist_ok=True)
 
     if params['resume']:
@@ -158,7 +192,7 @@ def run(user_params):
     else:
         checkpoint_file = None
         lit_model = LitSeg(params['model_layers'], params['model_channels'], params['loss'], params['class_weights'], params['lr'], params['momentum'], params['weight_decay'], 
-                           total_iters, params['scheduler_power'])
+                           total_iters, params['scheduler_power'], params['use_unet'], params)
         start_epoch = 0
 
     callbacks = [LearningRateMonitor()]
@@ -170,9 +204,10 @@ def run(user_params):
     # Callback for saving the model at the end of each epoch
     callbacks.append(ModelCheckpoint(save_last=True))
 
-    logger = TensorBoardLogger('.', name=params['log_dir'], version=params['version'])
+    logger_tb = TensorBoardLogger('.', name=params['log_dir'], version=params['experiment'])
+    logger = MyLogger()
 
-    trainer = pl.Trainer(max_epochs=start_epoch+params['epochs'], callbacks=callbacks, precision=precision, logger=logger)
+    trainer = pl.Trainer(max_epochs=start_epoch+params['epochs'], callbacks=callbacks, precision=precision, logger=[logger_tb, logger])
     trainer.fit(lit_model, data_loader_train, data_loader_valid, ckpt_path=checkpoint_file)
 
     return ds_train, ds_valid, lit_model, trainer
