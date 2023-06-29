@@ -9,35 +9,38 @@ from dataset import create_datasets
 
 defaul_params = {
     # Dataset
-    'img_dir': None,
-    'label_dir': None,
-    'crop_size': (256, 256),          
-    'train_val_split': 0.1,
-    'use_transforms': False,
+    'img_dir': None,                    # Images path
+    'label_dir': None,                  # Labels path
+    'crop_size': (256, 256),            # Crop size for training
+    'train_val_split': 0.1,             # Train/validation split
+    'use_transforms': False,            # Use data augmentation
     # Model
-    'model_layers': (1, 1, 1, 1), 
-    'model_channels': (4, 4, 4, 4), 
+    'model_layers': (3, 3, 3),          # Number of residual blocks at each layer of the model
+    'model_channels': (16,32,64),       # Number of channels at each layer
+    'use_unet': True,                   # If False, use ResNet with no downsampling
     # Training
     'epochs': 1,
-    'lr': 0.001,
+    'lr': 0.01,
     'batch_size_train': 8,
-    'batch_size_valid': 8,
-    'momentum': 0.9,
+    'batch_size_valid': 8, 
+    'momentum': 0.9,                    # Momentum for optimizer
     'weight_decay': 0.,
-    'seed': 12,
+    'seed': 12,                         # Seed for random number generators
     'loss': 'cross_entropy',
-    'class_weights': (0.367, 0.633),
+    'scheduler_power': 0.9,             # Power por the polynomial scheduler
+    'class_weights': (0.367, 0.633),    # Weights to use for cross entropy
     # Efficiency
     'device': 'cuda',
-    'num_workers': 3,
-    'use_amp': False,
-    'pin_memory': False,
+    'num_workers': 3,                   # Number of workers for the dataloader
+    'use_amp': True,                    # Mixed precision
+    'pin_memory': False,            
     'non_blocking': False,
+    # Logging
+    'log_dir': 'logs_unet',             # Directory for logging metrics and model checkpoints
+    'experiment':'unet_l_3_c_16_32_64', # Experiment tag
+    'save_best':True,                   # Save model with best validation loss
     # Other
-    'resume': False,
-    'log_dir': 'logs',
-    'version':1,
-    'save_best':True,
+    'resume': False,                    # Resume from previous training
 }
 
 def seed_worker(worker_id):
@@ -99,7 +102,7 @@ def validate(model, data_loader_valid, loss_func, device, ds_size):
 
     return valid_stats
         
-def train(model, ds_train, ds_valid, loss, class_weights, epochs, lr, batch_size_train, batch_size_valid, momentum=0.9, weight_decay=0., device='cuda', num_workers=0, 
+def train(model, ds_train, ds_valid, loss, class_weights, epochs, lr, batch_size_train, batch_size_valid, momentum=0.9, weight_decay=0., scheduler_power=0.9, device='cuda', num_workers=0, 
           use_amp=False, pin_memory=False, non_blocking=False, resume=False, experiment_folder='logs', save_best=True, seed=None, meta=None):
 
     start_epoch = 1
@@ -131,7 +134,7 @@ def train(model, ds_train, ds_valid, loss, class_weights, epochs, lr, batch_size
     # Create optimizer and logger
     model.to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum, weight_decay=weight_decay)
-    lr_scheduler = torch.optim.lr_scheduler.PolynomialLR(optimizer, total_iters=len(data_loader_train)*epochs, power=0.9)
+    lr_scheduler = torch.optim.lr_scheduler.PolynomialLR(optimizer, total_iters=len(data_loader_train)*epochs, power=scheduler_power)
     scaler = torch.cuda.amp.GradScaler() if use_amp else None
     logger = torchtrainer.util.Logger(['Train loss', 'Valid loss', 'IoU', 'Prec', 'Rec', 'Time'])
     checkpoint_file = str(experiment_folder/f'checkpoint.pth')
@@ -185,6 +188,8 @@ def run(user_params):
     params = defaul_params.copy()
     for k, v in user_params.items():
         params[k] = v
+
+    torch.set_float32_matmul_precision('high')
     
     # Set deterministic training if a seed is provided
     seed = params['seed']
@@ -192,15 +197,18 @@ def run(user_params):
         seed_everything(seed)
 
     ds_train, ds_valid, _ = create_datasets(params['img_dir'], params['label_dir'], params['crop_size'], params['train_val_split'], use_simple=not params['use_transforms'])
-    model = torchtrainer.models.resnet_seg.ResNetSeg(params['model_layers'], params['model_channels'])
+    # Model
+    if params['use_unet']:
+        model = torchtrainer.models.resunet.ResUNet(params['model_layers'], params['model_channels'])
+    else:
+        model = torchtrainer.models.resnet_seg.ResNetSeg(params['model_layers'], params['model_channels'])
 
-    experiment_folder = Path(params['log_dir'])/f'version_{params["version"]}'
+    experiment_folder = Path(params['log_dir'])/str(params["experiment"])
     experiment_folder.mkdir(parents=True, exist_ok=True)
 
     logger = train(model, ds_train, ds_valid, params['loss'], params['class_weights'], params['epochs'], params['lr'], params['batch_size_train'], params['batch_size_valid'], 
-                   momentum=params['momentum'], 
-                   weight_decay=params['weight_decay'], device=params['device'], num_workers=params['num_workers'], use_amp=params['use_amp'], 
-                   pin_memory=params['pin_memory'], non_blocking=params['non_blocking'], resume=params['resume'], experiment_folder=experiment_folder, 
-                   save_best=params['save_best'], seed=seed, meta=params)
+                   momentum=params['momentum'], weight_decay=params['weight_decay'], scheduler_power=params['scheduler_power'], device=params['device'], 
+                   num_workers=params['num_workers'], use_amp=params['use_amp'], pin_memory=params['pin_memory'], non_blocking=params['non_blocking'], resume=params['resume'], 
+                   experiment_folder=experiment_folder, save_best=params['save_best'], seed=seed, meta=params)
     
     return logger, ds_train, ds_valid, model

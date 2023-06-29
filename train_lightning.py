@@ -121,7 +121,6 @@ class MyLogger(Logger):
 
     @property
     def version(self):
-        # Return the experiment version, int or str.
         return 1
 
     @rank_zero_only
