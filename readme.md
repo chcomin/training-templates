@@ -18,6 +18,7 @@ code: The codes for all recipes
 ├── experimenter_*.ipynb: Experiments using a training recipe
 ├── experimenter_*.ipynb: Experiments using another training recipe
 ...
+└── download_dataset.py: A script for downloading some specific datasets.
 ```
 
 This structure allows easily importing the required scripts inside the notebooks and training scripts.

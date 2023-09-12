@@ -6,9 +6,9 @@ from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger, Logger
 from lightning.pytorch.utilities import rank_zero_only
 import torchtrainer   #https://github.com/chcomin/torchtrainer
-from dataset_readers import vessel_cortex
+from .dataset_readers import vessel_cortex
 
-defaul_params = {
+default_params = {
     # Dataset
     'img_dir': None,                    # Images path
     'label_dir': None,                  # Labels path
@@ -48,7 +48,7 @@ defaul_params = {
 def process_params(user_params):
     '''Use default value of a parameter in case it was not provided'''
 
-    params = defaul_params.copy()
+    params = default_params.copy()
     for k, v in user_params.items():
         params[k] = v
 
@@ -172,7 +172,7 @@ class MyLogger(Logger):
 def run(user_params):
 
     params = process_params(user_params)
-    experiment_folder = initial_setup()
+    experiment_folder = initial_setup(params)
 
     # Mixed precision
     if params['use_amp']:

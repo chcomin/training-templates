@@ -5,9 +5,9 @@ import numpy.random as np_random
 import torch
 import torch.nn as nn
 import torchtrainer   #https://github.com/chcomin/torchtrainer
-from dataset_readers import vessel_cortex
+from .dataset_readers import vessel_cortex
 
-defaul_params = {
+default_params = {
     # Dataset
     'img_dir': None,                    # Images path
     'label_dir': None,                  # Labels path
@@ -60,7 +60,7 @@ def process_params(user_params):
     '''Use default value of a parameter in case it was not provide. Also add the 
     parameters as a meta attribute.'''
 
-    params = defaul_params.copy()
+    params = default_params.copy()
     for k, v in user_params.items():
         params[k] = v
 
@@ -220,7 +220,7 @@ def train(model, ds_train, ds_valid, experiment_folder, loss, class_weights, epo
 def run(user_params):
 
     params = process_params(user_params)
-    experiment_folder = initial_setup()
+    experiment_folder = initial_setup(params)
 
     # Dataset
     ds_train, ds_valid, _ = vessel_cortex.create_datasets(params['img_dir'], params['label_dir'], params['crop_size'], params['train_val_split'], use_simple=not params['use_transforms'])
