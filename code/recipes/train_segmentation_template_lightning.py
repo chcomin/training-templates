@@ -6,7 +6,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger, Logger
 from lightning.pytorch.utilities import rank_zero_only
 import torchtrainer   #https://github.com/chcomin/torchtrainer
-from dataset import create_datasets
+from dataset_readers import vessel_cortex
 
 defaul_params = {
     # Dataset
@@ -18,7 +18,7 @@ defaul_params = {
     # Model
     'model_layers': (3, 3, 3),          # Number of residual blocks at each layer of the model
     'model_channels': (16,32,64),       # Number of channels at each layer
-    'use_unet': True,                   # If False, use ResNet with no downsampling
+    'model_type': 'unet',               # Model to use
     # Training
     'epochs': 1,
     'lr': 0.01,
@@ -40,15 +40,45 @@ defaul_params = {
     'log_dir': 'logs_unet',             # Directory for logging metrics and model checkpoints
     'experiment':'unet_l_3_c_16_32_64', # Experiment tag
     'save_best':True,                   # Save model with best validation loss
+    'meta': None,                       # Additional metadata to save
     # Other
     'resume': False,                    # Resume from previous training
 }
 
+def process_params(user_params):
+    '''Use default value of a parameter in case it was not provided'''
+
+    params = defaul_params.copy()
+    for k, v in user_params.items():
+        params[k] = v
+
+    if params['meta'] is None:
+        params['meta'] = params.copy()
+    else:
+        params['meta'] = (params['meta'], params.copy())
+
+    return params
+
+def initial_setup(params):
+
+    torch.set_float32_matmul_precision('high')
+    
+    # Set deterministic training if a seed is provided
+    seed = params['seed']
+    if seed is not None:
+        # workers=True sets different seeds for each worker.
+        pl.seed_everything(seed, workers=True)
+
+    experiment_folder = Path(params['log_dir'])/str(params["experiment"])
+    experiment_folder.mkdir(parents=True, exist_ok=True)
+
+    return experiment_folder
+
 class LitSeg(pl.LightningModule):
     def __init__(self, model_layers, model_channels, loss, class_weights, lr, momentum, weight_decay, iters, scheduler_power, 
-                 use_unet, meta):
+                 model_type, meta):
         super().__init__()
-        self.save_hyperparameters()
+        self.save_hyperparameters()  # Add __init__ parameters to checkpoint file
 
         # Define loss function
         if loss=='cross_entropy':
@@ -57,9 +87,9 @@ class LitSeg(pl.LightningModule):
             loss_func = torchtrainer.perf_funcs.LabelWeightedCrossEntropyLoss()
 
         # Model
-        if use_unet:
+        if model_type=='unet':
             model = torchtrainer.models.resunet.ResUNet(model_layers, model_channels)
-        else:
+        elif model_type=='resnetseg':
             model = torchtrainer.models.resnet_seg.ResNetSeg(model_layers, model_channels)
 
         self.loss_func = loss_func
@@ -71,6 +101,7 @@ class LitSeg(pl.LightningModule):
         self.model = model
 
     def forward(self, x):
+        '''Defining this method allows using an instance of this class as litseg(x).'''
         return self.model(x)
 
     def training_step(self, batch, batch_idx):
@@ -112,6 +143,8 @@ class LitSeg(pl.LightningModule):
         return {'optimizer':optimizer, 'lr_scheduler':lr_scheduler_config}
 
 class MyLogger(Logger):
+    '''Simple class for logging performance metrics.'''
+    
     def __init__(self):
         self.metrics = {}
 
@@ -138,25 +171,17 @@ class MyLogger(Logger):
 
 def run(user_params):
 
-    #Use default value of a parameter in case it was not provided as input to the function
-    params = defaul_params.copy()
-    for k, v in user_params.items():
-        params[k] = v
-
-    torch.set_float32_matmul_precision('high')
+    params = process_params(user_params)
+    experiment_folder = initial_setup()
 
     # Mixed precision
     if params['use_amp']:
         precision = '16-mixed'
     else:
         precision = '32-true'
-    seed = params['seed']
-    if seed is not None:
-        # workers=True sets different seeds for each worker.
-        pl.seed_everything(seed, workers=True)
 
     # Create dataset and dataloaders
-    ds_train, ds_valid, _ = create_datasets(params['img_dir'], params['label_dir'], params['crop_size'], params['train_val_split'], use_simple=not params['use_transforms'])
+    ds_train, ds_valid, _ = vessel_cortex.create_datasets(params['img_dir'], params['label_dir'], params['crop_size'], params['train_val_split'], use_simple=not params['use_transforms'])
     data_loader_train = torch.utils.data.DataLoader(
         ds_train,
         batch_size=params['batch_size_train'],
@@ -176,13 +201,10 @@ def run(user_params):
     )
     total_iters = len(data_loader_train)*params['epochs']   # For scheduler
 
-    # Folder for saving logs
-    experiment_folder = Path(params['log_dir'])/str(params["experiment"])
-    experiment_folder.mkdir(parents=True, exist_ok=True)
-
     if params['resume']:
         # Resume previous experiment
         checkpoint_file = experiment_folder/'checkpoints/last.ckpt'
+        seed = params['seed']
         lit_model = LitSeg.load_from_checkpoint(checkpoint_file) 
         start_epoch = lit_model.current_epoch + 1
         if seed is not None:
@@ -191,7 +213,7 @@ def run(user_params):
     else:
         checkpoint_file = None
         lit_model = LitSeg(params['model_layers'], params['model_channels'], params['loss'], params['class_weights'], params['lr'], params['momentum'], params['weight_decay'], 
-                           total_iters, params['scheduler_power'], params['use_unet'], params)
+                           total_iters, params['scheduler_power'], params['model_type'], params)
         start_epoch = 0
 
     callbacks = [LearningRateMonitor()]

@@ -5,7 +5,7 @@ import numpy.random as np_random
 import torch
 import torch.nn as nn
 import torchtrainer   #https://github.com/chcomin/torchtrainer
-from dataset import create_datasets
+from dataset_readers import vessel_cortex
 
 defaul_params = {
     # Dataset
@@ -17,7 +17,7 @@ defaul_params = {
     # Model
     'model_layers': (3, 3, 3),          # Number of residual blocks at each layer of the model
     'model_channels': (16,32,64),       # Number of channels at each layer
-    'use_unet': True,                   # If False, use ResNet with no downsampling
+    'model_type': 'unet',               # Model to use
     # Training
     'epochs': 1,
     'lr': 0.01,
@@ -39,6 +39,7 @@ defaul_params = {
     'log_dir': 'logs_unet',             # Directory for logging metrics and model checkpoints
     'experiment':'unet_l_3_c_16_32_64', # Experiment tag
     'save_best':True,                   # Save model with best validation loss
+    'meta': None,                       # Additional metadata to save
     # Other
     'resume': False,                    # Resume from previous training
 }
@@ -55,6 +56,35 @@ def seed_everything(seed):
     random.seed(seed) 
     np_random.seed(seed)
 
+def process_params(user_params):
+    '''Use default value of a parameter in case it was not provide. Also add the 
+    parameters as a meta attribute.'''
+
+    params = defaul_params.copy()
+    for k, v in user_params.items():
+        params[k] = v
+
+    if params['meta'] is None:
+        params['meta'] = params.copy()
+    else:
+        params['meta'] = (params['meta'], params.copy())
+
+    return params
+
+def initial_setup(params):
+
+    torch.set_float32_matmul_precision('high')
+    
+    # Set deterministic training if a seed is provided
+    seed = params['seed']
+    if seed is not None:
+        seed_everything(seed)
+
+    experiment_folder = Path(params['log_dir'])/str(params["experiment"])
+    experiment_folder.mkdir(parents=True, exist_ok=True)
+
+    return experiment_folder
+
 def train_one_epoch(model, data_loader_train, loss_func, optimizer, lr_scheduler, device, non_blocking, use_amp, scaler, batches_per_epoch):
 
     model.train()
@@ -62,12 +92,12 @@ def train_one_epoch(model, data_loader_train, loss_func, optimizer, lr_scheduler
     for batch_idx, (image, target) in enumerate(data_loader_train):
         image = image.to(device, non_blocking=non_blocking)
         target = target.to(device, non_blocking=non_blocking)
-        with torch.cuda.amp.autocast(enabled=use_amp):
+        with torch.cuda.amp.autocast(enabled=use_amp):    # Forward pass in mixed precision
             output = model(image)
             loss = loss_func(output, target)
 
         optimizer.zero_grad()
-        if scaler is not None:
+        if scaler is not None:                 # Reescale loss to avoid mixed precision errors
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -78,6 +108,7 @@ def train_one_epoch(model, data_loader_train, loss_func, optimizer, lr_scheduler
         lr_scheduler.step()
 
         loss = loss.item()
+        # Last batch might have different dimension, we multiply by batch size to calculate the average correctly
         train_loss += loss*image.shape[0]
         print(f'Batch {batch_idx+1}/{batches_per_epoch}, Train loss: {loss}')
 
@@ -93,17 +124,17 @@ def validate(model, data_loader_valid, loss_func, device, ds_size):
             target = target.to(device)
             output = model(image)
             loss_valid = loss_func(output, target).item()  
-            acc = torchtrainer.perf_funcs.segmentation_accuracy(output, target)
+            metrics = torchtrainer.perf_funcs.segmentation_accuracy(output, target)
 
             # Last batch might have different dimension, we multiply by batch size to calculate the average correctly
-            stats = torch.tensor([loss_valid, acc['iou'], acc['prec'], acc['rec']])*image.shape[0]
+            stats = torch.tensor([loss_valid, metrics['iou'], metrics['prec'], metrics['rec']])*image.shape[0]
             valid_stats += stats
         valid_stats /= ds_size
 
     return valid_stats
         
-def train(model, ds_train, ds_valid, loss, class_weights, epochs, lr, batch_size_train, batch_size_valid, momentum=0.9, weight_decay=0., scheduler_power=0.9, device='cuda', num_workers=0, 
-          use_amp=False, pin_memory=False, non_blocking=False, resume=False, experiment_folder='logs', save_best=True, seed=None, meta=None):
+def train(model, ds_train, ds_valid, experiment_folder, loss, class_weights, epochs, lr, batch_size_train, batch_size_valid, momentum=0.9, weight_decay=0., scheduler_power=0.9, 
+          device='cuda', num_workers=0, use_amp=False, pin_memory=False, non_blocking=False, resume=False, save_best=True, seed=None, meta=None, **kwargs):
 
     start_epoch = 1
     # Create dataloaders
@@ -152,6 +183,7 @@ def train(model, ds_train, ds_valid, loss, class_weights, epochs, lr, batch_size
             # Seed using the current epoch to avoid using the same seed as in epoch 0 when resuming
             seed_everything(seed+start_epoch)
 
+    # Number of batches for each epoch
     batches_per_epoch = len(ds_train)//batch_size_train + 1*(len(ds_train)%batch_size_train>0)
     best_valid_loss = torch.inf
     for epoch in range(start_epoch, start_epoch+epochs):
@@ -176,8 +208,10 @@ def train(model, ds_train, ds_valid, loss, class_weights, epochs, lr, batch_size
         }
         if use_amp:
             checkpoint["scaler"] = scaler.state_dict()
+        # Save data
         torch.save(checkpoint, checkpoint_file)
 
+        # Save model with lowest validation loss
         if save_best and valid_stats[0]<best_valid_loss:
             torch.save(checkpoint, checkpoint_file.replace('.pth', '_best.pth'))
 
@@ -185,30 +219,19 @@ def train(model, ds_train, ds_valid, loss, class_weights, epochs, lr, batch_size
 
 def run(user_params):
 
-    params = defaul_params.copy()
-    for k, v in user_params.items():
-        params[k] = v
+    params = process_params(user_params)
+    experiment_folder = initial_setup()
 
-    torch.set_float32_matmul_precision('high')
-    
-    # Set deterministic training if a seed is provided
-    seed = params['seed']
-    if seed is not None:
-        seed_everything(seed)
+    # Dataset
+    ds_train, ds_valid, _ = vessel_cortex.create_datasets(params['img_dir'], params['label_dir'], params['crop_size'], params['train_val_split'], use_simple=not params['use_transforms'])
 
-    ds_train, ds_valid, _ = create_datasets(params['img_dir'], params['label_dir'], params['crop_size'], params['train_val_split'], use_simple=not params['use_transforms'])
     # Model
-    if params['use_unet']:
+    if params['model_type']=='unet':
         model = torchtrainer.models.resunet.ResUNet(params['model_layers'], params['model_channels'])
-    else:
+    elif params['model_type']=='resnetseg':
         model = torchtrainer.models.resnet_seg.ResNetSeg(params['model_layers'], params['model_channels'])
 
-    experiment_folder = Path(params['log_dir'])/str(params["experiment"])
-    experiment_folder.mkdir(parents=True, exist_ok=True)
-
-    logger = train(model, ds_train, ds_valid, params['loss'], params['class_weights'], params['epochs'], params['lr'], params['batch_size_train'], params['batch_size_valid'], 
-                   momentum=params['momentum'], weight_decay=params['weight_decay'], scheduler_power=params['scheduler_power'], device=params['device'], 
-                   num_workers=params['num_workers'], use_amp=params['use_amp'], pin_memory=params['pin_memory'], non_blocking=params['non_blocking'], resume=params['resume'], 
-                   experiment_folder=experiment_folder, save_best=params['save_best'], seed=seed, meta=params)
+    # Training
+    logger = train(model, ds_train, ds_valid, experiment_folder, **params)
     
     return logger, ds_train, ds_valid, model
