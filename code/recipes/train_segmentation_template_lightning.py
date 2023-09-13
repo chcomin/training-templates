@@ -39,6 +39,7 @@ default_params = {
     # Logging
     'log_dir': 'logs_unet',             # Directory for logging metrics and model checkpoints
     'experiment':'unet_l_3_c_16_32_64', # Experiment tag
+    'save_every':1,                     # Number of epochs between checkpoints
     'save_best':True,                   # Save model with best validation loss
     'meta': None,                       # Additional metadata to save
     # Other
@@ -223,7 +224,7 @@ def run(user_params):
                                             filename="best_val_loss-{epoch:02d}-{val_loss:.2f}")
         callbacks.append(checkpoint_loss)
     # Callback for saving the model at the end of each epoch
-    callbacks.append(ModelCheckpoint(save_last=True))
+    callbacks.append(ModelCheckpoint(save_last=True, every_n_epochs=params['save_every']))
 
     logger_tb = TensorBoardLogger('.', name=params['log_dir'], version=params['experiment'])
     logger = MyLogger()

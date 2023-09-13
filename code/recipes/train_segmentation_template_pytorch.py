@@ -38,6 +38,7 @@ default_params = {
     # Logging
     'log_dir': 'logs_unet',             # Directory for logging metrics and model checkpoints
     'experiment':'unet_l_3_c_16_32_64', # Experiment tag
+    'save_every':1,                     # Number of epochs between checkpoints
     'save_best':True,                   # Save model with best validation loss
     'meta': None,                       # Additional metadata to save
     # Other
@@ -134,7 +135,7 @@ def validate(model, data_loader_valid, loss_func, device, ds_size):
     return valid_stats
         
 def train(model, ds_train, ds_valid, experiment_folder, loss, class_weights, epochs, lr, batch_size_train, batch_size_valid, momentum=0.9, weight_decay=0., scheduler_power=0.9, 
-          device='cuda', num_workers=0, use_amp=False, pin_memory=False, non_blocking=False, resume=False, save_best=True, seed=None, meta=None, **kwargs):
+          device='cuda', num_workers=0, use_amp=False, pin_memory=False, non_blocking=False, resume=False, save_every=1, save_best=True, seed=None, meta=None, **kwargs):
 
     start_epoch = 1
     # Create dataloaders
@@ -198,19 +199,19 @@ def train(model, ds_train, ds_valid, experiment_folder, loss, class_weights, epo
         print(f'Valid loss: {valid_stats[0]}, IoU: {valid_stats[1]}, Prec: {valid_stats[2]}, Rec {valid_stats[3]}')
         logger.add_data(epoch, [loss/len(ds_train)]+valid_stats.tolist())
 
-        checkpoint = {
-            "model": model.state_dict(),
-            "optimizer": optimizer.state_dict(),
-            "lr_scheduler": lr_scheduler.state_dict(),
-            "epoch": epoch,
-            'logger':logger.state_dict(),
-            "meta": meta,
-        }
-        if use_amp:
-            checkpoint["scaler"] = scaler.state_dict()
-        # Save data
-        torch.save(checkpoint, checkpoint_file)
-
+        if (epoch+1)%save_every==0 or epoch==(start_epoch+epochs-1):
+            checkpoint = {
+                "model": model.state_dict(),
+                "optimizer": optimizer.state_dict(),
+                "lr_scheduler": lr_scheduler.state_dict(),
+                "epoch": epoch,
+                'logger':logger.state_dict(),
+                "meta": meta,
+            }
+            if use_amp:
+                checkpoint["scaler"] = scaler.state_dict()
+            # Save data
+            torch.save(checkpoint, checkpoint_file)
         # Save model with lowest validation loss
         if save_best and valid_stats[0]<best_valid_loss:
             torch.save(checkpoint, checkpoint_file.replace('.pth', '_best.pth'))
