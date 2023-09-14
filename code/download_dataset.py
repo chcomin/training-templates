@@ -32,6 +32,10 @@ def oxford_pets(root_folder):
         if file[:2]!='._':
             shutil.copy2(label_in_folder/file, label_out_folder/file)
 
+    for file in os.listdir(root_ds/'images'):
+        if '.mat' in file:
+            os.remove(root_ds/f'images/{file}')
+
     shutil.rmtree(root_ds/'annotations')
     print('Done!')
 
