@@ -126,7 +126,7 @@ class LitSeg(pl.LightningModule):
                 'batch': batch,
                 "batch_idx": batch_idx,
             }
-            torch.save(checkpoint, 'error_ckp.pth')
+            torch.save(checkpoint, '../../data/error_ckp.pth')
 
         self.log("val_loss", loss, prog_bar=True)       
         self.log_dict(acc, prog_bar=True)   
