@@ -8,11 +8,12 @@ class MNISTV2(Dataset):
     '''Create Dataset with similar attributes as MNIST. This class is necessary for splitting
     the dataset into train and validation.'''
    
-    def __init__(self, data, targets):
+    def __init__(self, data, targets, return_as_color=False):
         super().__init__()
 
         self.data = data
         self.targets = targets
+        self.return_as_color = return_as_color
 
     def __len__(self):
         return len(self.data)
@@ -21,8 +22,11 @@ class MNISTV2(Dataset):
 
         img, target = self.data[index], int(self.targets[index])
         img = img.float()/255
+        img = img[None]
+        if self.return_as_color:
+            img = img.repeat(3, 1, 1)
 
-        return img[None], target
+        return img, target
 
 def create_datasets(root, train_val_split, download=False, seed=None):
 

@@ -6,6 +6,7 @@ import torch
 import torch.nn as nn
 import torchtrainer   #https://github.com/chcomin/torchtrainer
 from .dataset_readers import mnist
+import torchvision
 
 default_params = {
     # Dataset
@@ -62,10 +63,10 @@ class CustomCNN(nn.Module):
         self.pool2 = nn.MaxPool2d(2)
        
         # Third block
-        self.conv3 = nn.Conv2d(2*channels, 4 * channels, kernel_size, padding=kernel_size//2)
+        self.conv3 = nn.Conv2d(2*channels, 4 * channels, kernel_size, padding=kernel_size//2, dilation=2)
         self.bn3 = nn.BatchNorm2d(4 * channels)
         self.relu3 = nn.ReLU()
-        self.pool3 = nn.MaxPool2d(2)
+        #self.pool3 = nn.MaxPool2d(2)
        
         # Fourth block (no pooling after this)
         self.conv4 = nn.Conv2d(4*channels, 8 * channels, kernel_size, padding=kernel_size//2)
@@ -84,7 +85,7 @@ class CustomCNN(nn.Module):
     def forward(self, x):
         x = self.pool1(self.relu1(self.bn1(self.conv1(x))))
         x = self.pool2(self.relu2(self.bn2(self.conv2(x))))
-        x = self.pool3(self.relu3(self.bn3(self.conv3(x))))
+        x = self.relu3(self.bn3(self.conv3(x)))
         x = self.relu4(self.bn4(self.conv4(x)))
        
         x = self.global_avg_pool(x)
@@ -278,6 +279,7 @@ def run(user_params):
 
     # Model
     model = CustomCNN(channels=params['channels'], fc_channels=params['fc_channels'], kernel_size=3)
+    #model = torchvision.models.resnet50(num_classes=10, replace_stride_with_dilation=[False, False, True])
 
     # Training
     logger = train(model, ds_train, ds_valid, experiment_folder, **params)
