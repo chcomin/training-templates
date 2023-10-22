@@ -5,7 +5,7 @@ import numpy.random as np_random
 import torch
 import torch.nn as nn
 import torchtrainer   #https://github.com/chcomin/torchtrainer
-from .dataset_readers import vessel_mini
+import dataset_vessel_crop
 
 default_params = {
     # Dataset
@@ -227,7 +227,7 @@ def run(user_params):
     experiment_folder = initial_setup(params)
 
     # Dataset
-    ds_train, ds_valid, _ = vessel_mini.create_datasets(params['img_dir'], params['label_dir'], params['crop_size'], params['train_val_split'], use_simple=not params['use_transforms'])
+    ds_train, ds_valid = dataset_vessel_crop.create_datasets(params['img_dir'], params['label_dir'], params['crop_size'], params['train_val_split'])
 
     # Model
     if params['model_type']=='unet':

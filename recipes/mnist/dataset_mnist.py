@@ -4,6 +4,11 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 
+def download(directory):
+
+    MNIST(directory, train=True, download=True)
+
+
 class MNISTV2(Dataset):
     '''Create Dataset with similar attributes as MNIST. This class is necessary for splitting
     the dataset into train and validation.'''

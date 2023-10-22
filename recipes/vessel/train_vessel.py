@@ -10,37 +10,39 @@ import dataset_vessel
 # In case a parameter is not provided, the following default values are used:
 default_params = {
     # Dataset
-    'img_dir': Path('data/vessel/images'),
-    'label_dir': Path('data/vessel/labels'),      
-    'train_val_split': 0.1,
+    'img_dir': Path('data/vessel/images'),     # Images path
+    'label_dir': Path('data/vessel/labels'),   # Labels path   
+    'train_val_split': 0.1,                    # Train/validation split
+    'use_transforms': True,                    # If False, do not use data augmentation
     # Model
-    'model_layers': (1, 1, 1), 
-    'model_channels': (16,32,64), 
-    'model_type': 'unet',
+    'model_layers': (1, 1, 1),                 # Number of residual blocks at each layer of the model
+    'model_channels': (16,32,64),              # Number of channels at each layer
+    'model_type': 'unet',                      # Model to use
     # Training
-    'epochs': 20,
+    'epochs': 200,
     'lr': 0.01,
     'batch_size_train': 8,
     'batch_size_valid': 8, 
-    'momentum': 0.9,
+    'momentum': 0.9,                           # Momentum for optimizer
     'weight_decay': 0.,
-    'seed': 12,
+    'seed': 12,                                # Seed for random number generators
     'loss': 'cross_entropy',
-    'scheduler_power': 0.9,
-    'class_weights': (0.3414, 0.6586),
+    'scheduler_power': 0.9,                    # Power por the polynomial scheduler
+    'class_weights': (0.3414, 0.6586),         # Class weights to use for cross entropy calculation
     # Efficiency
     'device': 'cuda',
-    'num_workers': 3,  # 3 is a good compromise
-    'use_amp': True,
+    'num_workers': 3,                          # Number of workers for the dataloader
+    'use_amp': True,                           # Mixed precision
     'pin_memory': False,
     'non_blocking': False,
     # Logging
-    'log_dir': 'logs/',
-    'experiment':'unet_l_1_1_1_c_16_32_64',
-    'save_every':1,                
-    'save_best':True,
-    # Other
-    'resume': False,
+    'log_dir': 'logs/',                        # Directory for logging metrics and model checkpoints
+    'experiment':'unet_l_1_1_1_c_16_32_64',    # Experiment tag
+    'save_every':1,                            # Number of epochs between checkpoints     
+    'save_best':True,                          # Save model with best validation loss
+    'meta': None,                              # Additional metadata to save
+    # Other 
+    'resume': False                            # Resume from previous training
 }
 
 def seed_worker(worker_id):
@@ -225,7 +227,7 @@ def run(user_params):
     experiment_folder = initial_setup(params)
 
     # Dataset
-    ds_train, ds_valid = dataset_vessel.create_datasets(params['img_dir'], params['label_dir'], params['train_val_split'])
+    ds_train, ds_valid = dataset_vessel.create_datasets(params['img_dir'], params['label_dir'], params['train_val_split'], params['use_transforms'])
 
     # Model
     if params['model_type']=='unet':

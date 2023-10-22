@@ -5,45 +5,40 @@ import numpy.random as np_random
 import torch
 import torch.nn as nn
 import torchtrainer   #https://github.com/chcomin/torchtrainer
-from .dataset_readers import mnist
+import dataset_mnist
 import torchvision
 
 default_params = {
     # Dataset
-    'img_dir': None,                    # Images path
-    'label_dir': None,                  # Labels path
-    'crop_size': (256, 256),            # Crop size for training
-    'train_val_split': 0.1,             # Train/validation split
-    'use_transforms': False,            # Use data augmentation
+    'root_dir': Path('data'), 
+    'train_val_split': 0.1,      
     # Model
-    'model_layers': (3, 3, 3),          # Number of residual blocks at each layer of the model
-    'model_channels': (16,32,64),       # Number of channels at each layer
-    'model_type': 'unet',               # Model to use
+    'channels': 8, 
+    'fc_channels': 8,
     # Training
-    'epochs': 1,
+    'epochs': 5,
     'lr': 0.01,
-    'batch_size_train': 8,
-    'batch_size_valid': 8, 
-    'momentum': 0.9,                    # Momentum for optimizer
+    'batch_size_train': 64,
+    'batch_size_valid': 64, 
+    'momentum': 0.9,
     'weight_decay': 0.,
-    'seed': 12,                         # Seed for random number generators
+    'seed': 12,
     'loss': 'cross_entropy',
-    'scheduler_power': 0.9,             # Power por the polynomial scheduler
-    'class_weights': (0.367, 0.633),    # Weights to use for cross entropy
+    'scheduler_power': 0.9,
     # Efficiency
     'device': 'cuda',
-    'num_workers': 3,                   # Number of workers for the dataloader
-    'use_amp': True,                    # Mixed precision
-    'pin_memory': False,            
+    'num_workers': 0,  
+    'use_amp': True,
+    'pin_memory': False,
     'non_blocking': False,
     # Logging
-    'log_dir': 'logs_unet',             # Directory for logging metrics and model checkpoints
-    'experiment':'unet_l_3_c_16_32_64', # Experiment tag
-    'save_every':1,                     # Number of epochs between checkpoints
-    'save_best':True,                   # Save model with best validation loss
-    'meta': None,                       # Additional metadata to save
+    'log_dir': 'logs',
+    'experiment':'channels_32',
+    'save_every':1,                
+    'save_best':True,
+    'meta': None,
     # Other
-    'resume': False,                    # Resume from previous training
+    'resume': False,
 }
 
 class CustomCNN(nn.Module):
@@ -189,7 +184,7 @@ def validate(model, data_loader_valid, loss_func, device, ds_size):
 
     return valid_stats
         
-def train(model, ds_train, ds_valid, experiment_folder, loss, class_weights, epochs, lr, batch_size_train, batch_size_valid, momentum=0.9, weight_decay=0., scheduler_power=0.9, 
+def train(model, ds_train, ds_valid, experiment_folder, loss, epochs, lr, batch_size_train, batch_size_valid, momentum=0.9, weight_decay=0., scheduler_power=0.9, 
           device='cuda', num_workers=0, use_amp=False, pin_memory=False, non_blocking=False, resume=False, save_every=1, save_best=True, seed=None, meta=None, **kwargs):
 
     start_epoch = 1
@@ -275,7 +270,7 @@ def run(user_params):
     experiment_folder = initial_setup(params)
 
     # Dataset
-    ds_train, ds_valid = mnist.create_datasets(params['root_dir'], params['train_val_split'])
+    ds_train, ds_valid = dataset_mnist.create_datasets(params['root_dir'], params['train_val_split'])
 
     # Model
     model = CustomCNN(channels=params['channels'], fc_channels=params['fc_channels'], kernel_size=3)

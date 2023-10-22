@@ -85,7 +85,7 @@ def create_transform(type='train-simple'):
 
     return transform_func
 
-def create_datasets(img_dir, label_dir, train_val_split=0.1, use_simple=True, seed=None):
+def create_datasets(img_dir, label_dir, train_val_split=0.1, use_transforms=False, seed=None):
     """Create dataset from directory. 
     
     Args
@@ -95,12 +95,12 @@ def create_datasets(img_dir, label_dir, train_val_split=0.1, use_simple=True, se
     seed: seed for splitting the data
     """
 
-    if use_simple:
-        train_type = 'train-simple'
+    if use_transforms:
+        aug_type = 'train-full'
     else:
-        train_type = 'train-full'
+        aug_type = 'train-simple'
 
-    train_transform = create_transform(type=train_type)
+    train_transform = create_transform(type=aug_type)
     valid_transform = create_transform(type='validation')
 
     ds = ImageSegmentationDataset(img_dir, label_dir, name_to_label_map, img_opener=img_opener, label_opener=label_opener)

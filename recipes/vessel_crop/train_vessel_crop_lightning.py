@@ -6,7 +6,7 @@ from lightning.pytorch.callbacks import ModelCheckpoint, LearningRateMonitor
 from lightning.pytorch.loggers import TensorBoardLogger, Logger
 from lightning.pytorch.utilities import rank_zero_only
 import torchtrainer   #https://github.com/chcomin/torchtrainer
-from .dataset_readers import vessel_mini
+import dataset_vessel_crop
 
 default_params = {
     # Dataset
@@ -126,7 +126,7 @@ class LitSeg(pl.LightningModule):
                 'batch': batch,
                 "batch_idx": batch_idx,
             }
-            torch.save(checkpoint, '../../data/error_ckp.pth')
+            torch.save(checkpoint, 'error_ckp.pth')
 
         self.log("val_loss", loss, prog_bar=True)       
         self.log_dict(acc, prog_bar=True)   
@@ -240,7 +240,7 @@ def run(user_params):
     experiment_folder = initial_setup(params)
 
     # Dataset
-    ds_train, ds_valid, _ = vessel_mini.create_datasets(params['img_dir'], params['label_dir'], params['crop_size'], params['train_val_split'], use_simple=not params['use_transforms'])
+    ds_train, ds_valid = dataset_vessel_crop.create_datasets(params['img_dir'], params['label_dir'], params['crop_size'], params['train_val_split'])
 
     trainer, lit_model = train(ds_train, ds_valid, experiment_folder, **params)
 
