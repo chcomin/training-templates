@@ -1,10 +1,7 @@
 __pycache__/
 .ipynb_checkpoints/
-data/*/
+data/
 .vscode
-lightning_logs/
-logs*/
-logs2/
-test*.py
+logs/
+tests/
 notes.txt
-models/
