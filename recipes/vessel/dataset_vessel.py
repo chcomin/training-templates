@@ -7,6 +7,15 @@ import torch
 import albumentations as aug
 from albumentations.pytorch import ToTensorV2
 from torchtrainer.imagedataset import ImageSegmentationDataset
+from torchvision.datasets.utils import download_and_extract_archive
+
+def download(directory):
+
+    url = 'https://www.dropbox.com/scl/fi/2h9yoz64gr7svjppj746t/vessel.tar.gz?rlkey=zx53tq0guohrk5ulx0uf7sefl&dl=1'
+    download_root = directory
+    extract_root = directory
+    filename = 'vessel.tar.gz'
+    download_and_extract_archive(url, download_root, extract_root, filename, remove_finished=True)
 
 def name_to_label_map(img_path):
     return img_path.replace('.tiff', '.png')
@@ -35,24 +44,17 @@ def multiplicative(img, mult_val_limit, **kwargs):
 def zscore(img, **kwargs):
     return ((img-img.mean())/img.std()).astype(np.float32)
 
-def create_transform(mean, std, crop_size, type='train-simple'):
+def create_transform(type='train-simple'):
     """Create a transform function with signature transform(image, label)."""
 
-    if crop_size is None:
-        crop_transf = aug.NoOp()
-    else:
-        crop_transf = aug.RandomCrop(crop_size[0], crop_size[1])
     if type=='train-simple':
         transform_comp = aug.Compose([
-            crop_transf,
             aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
-            #aug.Normalize(mean=mean, std=std),
             aug.Lambda(name='zscore', image=zscore, p=1.),
             ToTensorV2()
         ])
     elif type=='train-full':
         transform_comp = aug.Compose([
-            crop_transf,
             aug.OneOf([
                 aug.GaussianBlur(blur_limit=(3, 7)),
                 aug.Sharpen(alpha=(0.2, 0.5), lightness=(0., 1.)),
@@ -69,16 +71,12 @@ def create_transform(mean, std, crop_size, type='train-simple'):
             aug.Transpose(),
             aug.ShiftScaleRotate(shift_limit_x=0.1, shift_limit_y=0.1, scale_limit=0.25, rotate_limit=45),
             aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
-            #aug.CLAHE(clip_limit=(1., 2.), tile_grid_size=(16, 16), p=0.1),
-            #aug.Normalize(mean=mean, std=std),
             aug.Lambda(name='zscore', image=zscore, p=1.),
             ToTensorV2(),
         ])
     elif type=='validation':
         transform_comp = aug.Compose([
-            aug.CenterCrop(1104, 1376),   # Still need to crop for validation because some samples have different sizes, which complicates batch creation
             aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
-            #aug.Normalize(mean=mean, std=std),
             aug.Lambda(name='zscore', image=zscore, p=1.),
             ToTensorV2()
         ])        
@@ -87,41 +85,31 @@ def create_transform(mean, std, crop_size, type='train-simple'):
 
     return transform_func
 
-def create_datasets(img_dir, label_dir, crop_size=None, train_val_split=0.1, use_simple=True, seed=None):
+def create_datasets(img_dir, label_dir, train_val_split=0.1, use_simple=True, seed=None):
     """Create dataset from directory. 
     
     Args
-    crop_size: (height,width) to crop the images
     train_val_split: percentage of images used for validation
-    use_simple: if True, use only crop, normalization and ToTensor. If False, use many data augmentation
-    transformations.
+    use_simple: data augmentations to use. If True, the images are only normalization and transformed 
+    to tensors. If False, use many data augmentations.
     seed: seed for splitting the data
     """
-
-    mean_data = 0.
-    std_data = 1.
-    class_weights = torch.tensor([0.3414, 0.6586])  
 
     if use_simple:
         train_type = 'train-simple'
     else:
         train_type = 'train-full'
 
-    train_transform = create_transform(mean=mean_data, std=std_data, crop_size=crop_size, type=train_type)
-    valid_transform = create_transform(mean=mean_data, std=std_data, crop_size=None, type='validation')
+    train_transform = create_transform(type=train_type)
+    valid_transform = create_transform(type='validation')
 
     ds = ImageSegmentationDataset(img_dir, label_dir, name_to_label_map, img_opener=img_opener, label_opener=label_opener)
     ds_train, ds_valid = ds.split_train_val(train_val_split, seed=seed)
     ds_train.set_transform(train_transform)
     ds_valid.set_transform(valid_transform)
 
-    meta = {
-        'mean_data':mean_data,
-        'std_data':std_data,
-        'class_weights':class_weights
-    }
 
-    return ds_train, ds_valid, meta
+    return ds_train, ds_valid
 
 # Statistics for vessel_mini
 # Original data:
