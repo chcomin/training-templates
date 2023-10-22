@@ -43,6 +43,9 @@ class OxfordIIITPetV2(Dataset):
     def getitem(self, idx):
         return self.__getitem__(idx, use_transforms=False)
     
+def download(directory):
+    OxfordIIITPet(directory, split='trainval', target_types='segmentation', download=True)
+
 def transform(image, label, size_smaller, size_larger, mean, std):
 
     mean = torch.tensor(mean).reshape(3, 1, 1)

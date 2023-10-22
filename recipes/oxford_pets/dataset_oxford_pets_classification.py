@@ -75,6 +75,9 @@ class ClassificationPresetEval:
     def __call__(self, img):
         return self.transforms(img)
 
+def download(directory):
+    OxfordIIITPet(directory, split='trainval', target_types='category', download=True)
+
 def view_images(ds, batch, n):
 
     for i in range(n):
