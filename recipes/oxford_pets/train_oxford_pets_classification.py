@@ -5,45 +5,40 @@ import numpy.random as np_random
 import torch
 import torch.nn as nn
 import torchtrainer   #https://github.com/chcomin/torchtrainer
-from .dataset_readers import oxford_pets_classification
+import dataset_oxford_pets_classification as ds_oxford
 import torchvision
 
 default_params = {
     # Dataset
-    'img_dir': None,                    # Images path
-    'label_dir': None,                  # Labels path
-    'crop_size': (256, 256),            # Crop size for training
-    'train_val_split': 0.1,             # Train/validation split
-    'use_transforms': False,            # Use data augmentation
+    'root_dir': Path('data'), 
+    'train_val_split': 0.1,      
     # Model
-    'model_layers': (3, 3, 3),          # Number of residual blocks at each layer of the model
-    'model_channels': (16,32,64),       # Number of channels at each layer
-    'model_type': 'unet',               # Model to use
+    'pre_trained': False,
     # Training
-    'epochs': 1,
+    'epochs': 50,
     'lr': 0.01,
-    'batch_size_train': 8,
-    'batch_size_valid': 8, 
-    'momentum': 0.9,                    # Momentum for optimizer
+    'batch_size_train': 32,
+    'batch_size_valid': 32, 
+    'momentum': 0.9,
     'weight_decay': 0.,
-    'seed': 12,                         # Seed for random number generators
+    'seed': 12,
     'loss': 'cross_entropy',
-    'scheduler_power': 0.9,             # Power por the polynomial scheduler
-    'class_weights': (0.367, 0.633),    # Weights to use for cross entropy
+    'scheduler_power': 0.9,
+    'class_weights': (0.675, 0.325),
     # Efficiency
     'device': 'cuda',
-    'num_workers': 3,                   # Number of workers for the dataloader
-    'use_amp': True,                    # Mixed precision
-    'pin_memory': False,            
+    'num_workers': 3,  
+    'use_amp': True,
+    'pin_memory': False,
     'non_blocking': False,
     # Logging
-    'log_dir': 'logs_unet',             # Directory for logging metrics and model checkpoints
-    'experiment':'unet_l_3_c_16_32_64', # Experiment tag
-    'save_every':1,                     # Number of epochs between checkpoints
-    'save_best':True,                   # Save model with best validation loss
-    'meta': None,                       # Additional metadata to save
+    'log_dir': 'logs',
+    'experiment':'test_efficientnet_notrain',
+    'save_every':1,                
+    'save_best':True,
+    'meta': None,
     # Other
-    'resume': False,                    # Resume from previous training
+    'resume': False,
 }
 
 def seed_worker(worker_id):
@@ -225,7 +220,7 @@ def run(user_params):
     experiment_folder = initial_setup(params)
 
     # Dataset
-    ds_train, ds_valid = oxford_pets_classification.create_datasets(params['root_dir'], params['train_val_split'])
+    ds_train, ds_valid = ds_oxford.create_datasets(params['root_dir'], params['train_val_split'])
 
     # Model
     if params['pre_trained']:

@@ -7,6 +7,7 @@ import torch
 from torchvision.transforms import v2
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
+from gtimer import Timer
 
 class OxfordIIITPetV2(Dataset):
     '''Create Dataset with similar attributes as OxfordIIITPet. This class is necessary for splitting
@@ -42,6 +43,21 @@ class OxfordIIITPetV2(Dataset):
 
     def getitem(self, idx):
         return self.__getitem__(idx, use_transforms=False)
+    
+class OxfordIIITPetDummy(Dataset):
+   
+    def __init__(self, images):
+        super().__init__()
+
+        self._images = images
+        self.img = torch.rand(3,700,700)
+        self.label = torch.randint(0,2,(700,700), dtype=torch.long)
+
+    def __len__(self):
+        return len(self._images)
+
+    def __getitem__(self, idx):
+        return self.img, self.label
     
 def download(directory):
     OxfordIIITPet(directory, split='trainval', target_types='segmentation', download=True)
@@ -130,5 +146,8 @@ def create_datasets(root, train_val_split, download=False, seed=None):
         
         ds_train = OxfordIIITPetV2(*data_train, classes, class_to_idx, train_transforms)
         ds_valid = OxfordIIITPetV2(*data_valid, classes, class_to_idx, valid_transforms)
+
+        #ds_train = OxfordIIITPetDummy(list(range(len(ds)-n_valid)))
+        #ds_valid = OxfordIIITPetDummy(list(range(n_valid)))
 
         return ds_train, ds_valid

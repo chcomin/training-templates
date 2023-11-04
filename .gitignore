@@ -5,3 +5,5 @@ data/
 logs/
 tests/
 notes.txt
+*.nsys-rep
+tests.py
