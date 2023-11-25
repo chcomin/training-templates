@@ -218,6 +218,7 @@ def train(model, ds_train, ds_valid, experiment_folder, loss, class_weights, epo
         # Save model with lowest validation loss
         if save_best and valid_stats[0]<best_valid_loss:
             torch.save(checkpoint, checkpoint_file.replace('.pth', '_best.pth'))
+            best_valid_loss = valid_stats[0]
 
     return logger
 
