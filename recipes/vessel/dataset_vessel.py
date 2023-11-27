@@ -1,9 +1,8 @@
-'''Creates the vessel_mini dataset.'''
+'''Script used for creating a VessMAP dataset object.'''
 
 from functools import partial
 import numpy as np
 from PIL import Image
-import torch
 import albumentations as aug
 from albumentations.pytorch import ToTensorV2
 from torchtrainer.imagedataset import ImageSegmentationDataset
@@ -11,25 +10,36 @@ from torchvision.datasets.utils import download_and_extract_archive
 
 def download(directory):
 
-    url = 'https://www.dropbox.com/scl/fi/2h9yoz64gr7svjppj746t/vessel.tar.gz?rlkey=zx53tq0guohrk5ulx0uf7sefl&dl=1'
+    url = 'https://zenodo.org/records/10045265/files/VessMAP.zip?download=1'
     download_root = directory
-    extract_root = directory
-    filename = 'vessel.tar.gz'
+    extract_root = f'{directory}/vessmap'
+    filename = 'VessMAP.zip'
     download_and_extract_archive(url, download_root, extract_root, filename, remove_finished=True)
 
 def name_to_label_map(img_path):
+    """Maps an image filename to the respective label."""
     return img_path.replace('.tiff', '.png')
 
 def img_opener(img_path):
+    """Opens an image given its path. The function must return a numpy array because
+    it is the type that algumentations takes as input."""
     img_pil = Image.open(img_path)
     return np.array(img_pil)
 
 def label_opener(img_path):
+    """Opens a label given its path."""
     img_pil = Image.open(img_path)
     return np.array(img_pil)//255
 
 def transform(image, mask, transform_comp):
-    """Given an image and a mask, apply transforms in `transform_comp`"""
+    """Given an image and a mask, apply transforms in `transform_comp`. This function is useful because
+    albumentations transforms need the image= and mask= keywords as input, and it also returns a
+    dictionary. Using this function, we can call the transforms as 
+    
+    image_t, label_t = transform(image, label)
+    
+    instead of having to deal with dictionaries."""
+
     res = transform_comp(image=image, mask=mask)
     image, mask = res['image'], res['mask']
 
@@ -49,9 +59,19 @@ def create_transform(type='train-simple'):
 
     if type=='train-simple':
         transform_comp = aug.Compose([
-            aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
+            #aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
             aug.Lambda(name='zscore', image=zscore, p=1.),
             ToTensorV2()
+        ])
+    elif type=='train-geometric':
+        transform_comp = aug.Compose([
+            aug.Flip(),
+            aug.RandomRotate90(),
+            aug.Transpose(),
+            aug.RandomSizedCrop(min_max_height=(230,256), height=256, width=256),
+            #aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
+            aug.Lambda(name='zscore', image=zscore, p=1.),
+            ToTensorV2(),
         ])
     elif type=='train-full':
         transform_comp = aug.Compose([
@@ -70,13 +90,13 @@ def create_transform(type='train-simple'):
             aug.RandomRotate90(),
             aug.Transpose(),
             aug.ShiftScaleRotate(shift_limit_x=0.1, shift_limit_y=0.1, scale_limit=0.25, rotate_limit=45),
-            aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
+            #aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
             aug.Lambda(name='zscore', image=zscore, p=1.),
             ToTensorV2(),
         ])
     elif type=='validation':
         transform_comp = aug.Compose([
-            aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
+            #aug.CLAHE(clip_limit=(3., 3.), tile_grid_size=(16, 16), p=1.),
             aug.Lambda(name='zscore', image=zscore, p=1.),
             ToTensorV2()
         ])        
@@ -85,22 +105,17 @@ def create_transform(type='train-simple'):
 
     return transform_func
 
-def create_datasets(img_dir, label_dir, train_val_split=0.1, use_transforms=False, seed=None):
+def create_datasets(img_dir, label_dir, train_val_split=0.1, transform_type='train-simple', seed=None):
     """Create dataset from directory. 
     
     Args
     train_val_split: percentage of images used for validation
-    use_simple: data augmentations to use. If True, the images are only normalization and transformed 
-    to tensors. If False, use many data augmentations.
+    use_simple: data augmentation to use. If 'train-simple', the images are only normalized and transformed 
+    to tensors.
     seed: seed for splitting the data
     """
 
-    if use_transforms:
-        aug_type = 'train-full'
-    else:
-        aug_type = 'train-simple'
-
-    train_transform = create_transform(type=aug_type)
+    train_transform = create_transform(type=transform_type)
     valid_transform = create_transform(type='validation')
 
     ds = ImageSegmentationDataset(img_dir, label_dir, name_to_label_map, img_opener=img_opener, label_opener=label_opener)
@@ -110,23 +125,3 @@ def create_datasets(img_dir, label_dir, train_val_split=0.1, use_transforms=Fals
 
 
     return ds_train, ds_valid
-
-# Statistics for vessel_mini
-# Original data:
-# mean: 34.5217
-# std: 12.3777
-# With CLAHE clip_limit=(3., 3.), tile_grid_size=(16, 16)
-# mean: 52.046542909953075 
-# std: 28.702299672350073
-# Class weights (background, vessel)
-# 0.3414, 0.6586
-
-# Statistics for the whole vessel data
-# Original data:
-# mean: 35.0115
-# std: 12.291
-# With CLAHE clip_limit=(3., 3.), tile_grid_size=(16, 16)
-# mean: 51.969
-# std: 28.4325
-# Class weights (background, vessel)
-# 0.367, 0.633
