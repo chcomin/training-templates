@@ -1,4 +1,4 @@
-# Pytorch-template
+# Training templates
 
 Recipes for training neural networks using [PyTorch](https://pytorch.org/). The format of the recipes is the following:
 
@@ -18,4 +18,16 @@ This repository is organized as follows:
   * ...
 * util: Some utility functions. Forget about it.
 
-The code depends on [Torchtrainer](https://github.com/chcomin/torchtrainer)
+The recipes use torchtrainer, a package that contains some utility functions for creating datasets, network architectures and calculating performance metrics. You can download the package at:
+
+[https://github.com/chcomin/torchtrainer](https://github.com/chcomin/torchtrainer)
+
+You can put the folder containing the package (torchtrainer) in the same directory as this notebook, or install the package by running the following command:
+
+`pip install -e torchtrainer`
+
+or if using conda:
+
+`conda develop torchtrainer`
+
+where `torchtrainer` is the directory containing the `pyproject.toml` file.
